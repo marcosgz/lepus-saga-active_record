@@ -83,6 +83,15 @@ module Lepus
           attempts_of(execution).chronological
         end
 
+        def executed_steps(executions)
+          steps = executions.to_h { |execution| [execution.id, []] }
+          return steps if steps.empty?
+
+          step_attempt_class.where(saga_execution_id: steps.keys, direction: "execute").distinct
+            .pluck(:saga_execution_id, :step_name).each { |id, step| steps[id] << step }
+          steps
+        end
+
         def count_step_attempts(execution, step_name:, direction:, epoch:)
           attempts_of(execution).where(step_name: step_name, direction: direction, epoch: epoch).count
         end
@@ -107,7 +116,7 @@ module Lepus
         # Keyset paging in up to two index-friendly queries: the executions
         # with a value in (value, id) order, then those without one by id.
         def list_executions(sort: :started_at, direction: :desc, after: nil, limit: 50, **filters)
-          column, descending, nullable = list_order(sort, direction)
+          column, descending, nullable = list_order(sort, direction, filters)
           scope = matching_executions(**filters)
           order = descending ? :desc : :asc
           if after
@@ -197,12 +206,15 @@ module Lepus
 
         # Rows strictly after the execution `after` in (column, id) order,
         # comparing against its stored value in a subquery so no precision is
-        # lost on the way through Ruby.
+        # lost on the way through Ruby. The bare bound on the column lets the
+        # (column, id) index start at the cursor instead of filtering every
+        # row before it.
         def beyond(column, after, descending)
           table = execution_class.arel_table
           value = execution_class.where(id: after).select(column).arel
-          compare = descending ? :lt : :gt
-          table[column].public_send(compare, value).or(table[column].eq(value).and(table[:id].public_send(compare, after)))
+          strict, bound = descending ? %i[lt lteq] : %i[gt gteq]
+          table[column].public_send(bound, value)
+            .and(table[column].public_send(strict, value).or(table[:id].public_send(strict, after)))
         end
 
         def matching_executions(saga_name: nil, status: nil, current_step: nil, partition: nil, resource: nil, from: nil, to: nil,

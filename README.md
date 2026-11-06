@@ -71,9 +71,10 @@ Lepus::Saga::ActiveRecord::Execution.where.not(id: pinned_ids).prune(finished_be
 | `stalled_executions(before:)` | `in_progress.where(last_progress_at: ...before).order(:last_progress_at, :id)` |
 | `executions_for_resource` | `for_resource(type, id).recent_first`: `ORDER BY started_at DESC, id DESC` on the resource index |
 | attempt queries | `where(saga_execution_id:, step_name:, direction:, epoch:)` plus `count`/`exists?` |
-| `list_executions` | Filters on the executions table, ordered by `(started_at, id)`, `(duration_ms, id)` or `(finished_at, id)` in the requested direction. Paging is keyset: rows after `after` compare against its stored value in a subquery (`col < (SELECT col ... WHERE id = ?) OR (col = (SELECT ...) AND id < ?)`). For a nullable sort it runs at most two queries, the rows with a value and then, when the page is not full, the rows without one by id, so both use the `(column, id)` index and nulls come last either way; the resource search is `LOWER(column) LIKE ? ESCAPE '!'`; the error filters are `id IN (SELECT saga_execution_id FROM saga_step_attempts WHERE status = 'failed' ...)` |
+| `list_executions` | Filters on the executions table, ordered by `(started_at, id)`, `(duration_ms, id)` or `(finished_at, id)` in the requested direction. Paging is keyset: rows after `after` compare against its stored value in a subquery (`col <= (SELECT col ... WHERE id = ?) AND (col < (SELECT ...) OR id < ?)` descending, `>=` and `>` ascending); the bare bound lets the `(column, id)` index start at the cursor instead of reading every row before it. For a nullable sort it runs at most two queries, the rows with a value and then, when the page is not full, the rows without one by id, so both use the `(column, id)` index and nulls come last either way; the resource search is `LOWER(column) LIKE ? ESCAPE '!'`; the error filters are `id IN (SELECT saga_execution_id FROM saga_step_attempts WHERE status = 'failed' ...)` |
 | `count_executions` | `group(...).count`; grouping by partition also groups by saga name to resolve executions without one |
 | `finished_executions` | Base's: `count_executions` grouped by saga and status over `finished_from`/`finished_to`, then one `list_executions(sort: :finished_at)` per saga, on the `finished_at` index |
+| `executed_steps` | One `SELECT DISTINCT saga_execution_id, step_name FROM saga_step_attempts WHERE saga_execution_id IN (...) AND direction = 'execute'` for every execution `/api/recent` lists |
 | `execution_series` | Plucks `started_at`, and `finished_at` and `status` of terminal executions, newest first and at most `max_rows` + 1; buckets them in Ruby |
 | `step_latency` | Joins attempts to executions and plucks the newest `max_rows` + 1 durations; percentiles in Ruby |
 | `failure_summary` | `GROUP BY error_class, saga_name, step_name` with `COUNT(*)` and `COUNT(DISTINCT saga_execution_id)`, ordered by `COUNT(*)` and `MAX(finished_at)`, then one query per group for its latest failure |
@@ -93,21 +94,21 @@ The `belongs_to :execution` of a step attempt is optional, because the foreign k
 
 Tables created by hand or before the generator (PostgreSQL `uuid` ids with `gen_random_uuid()` defaults, `jsonb` context, a `lock_version` column) work unchanged: the models set UUIDv7 ids before insert, read `jsonb` through the `json` attribute type and ignore `lock_version`. Rows written with ids that are not time-ordered (e.g. random UUIDv4) list in time order, since the store sorts by started_at (or duration) and only breaks ties by id.
 
-Such tables lack the `duration_ms` column and the indexes the install migration creates. Add them in a migration of your own:
+Such tables, and tables created by the 0.3.0 install generator, lack the `duration_ms` column and some of the indexes the install migration creates. Add them in a migration of your own; `if_not_exists: true` skips the indexes a table already has:
 
 ```ruby
-add_column :saga_executions, :duration_ms, :bigint
-add_index :saga_executions, [:started_at, :id]
-add_index :saga_executions, [:duration_ms, :id]
-add_index :saga_executions, :finished_at
-add_index :saga_executions, [:saga_name, :started_at]
-add_index :saga_executions, [:status, :started_at]
-add_index :saga_executions, [:partition, :started_at]
-add_index :saga_step_attempts, :started_at
-add_index :saga_step_attempts, [:error_class, :started_at]
+add_column :saga_executions, :duration_ms, :bigint, if_not_exists: true
+add_index :saga_executions, [:started_at, :id], if_not_exists: true
+add_index :saga_executions, [:duration_ms, :id], if_not_exists: true
+add_index :saga_executions, :finished_at, if_not_exists: true
+add_index :saga_executions, [:saga_name, :started_at], if_not_exists: true
+add_index :saga_executions, [:status, :started_at], if_not_exists: true
+add_index :saga_executions, [:partition, :started_at], if_not_exists: true
+add_index :saga_step_attempts, :started_at, if_not_exists: true
+add_index :saga_step_attempts, [:error_class, :started_at], if_not_exists: true
 ```
 
-and backfill the duration of finished executions, for example with `Lepus::Saga::ActiveRecord::Execution.where.not(finished_at: nil).find_each { |execution| execution.update_columns(duration_ms: ((execution.finished_at - execution.started_at) * 1000).round) }`.
+and backfill the duration of finished executions, for example with `Lepus::Saga::ActiveRecord::Execution.where.not(finished_at: nil).find_each { |execution| execution.update_columns(duration_ms: ((execution.finished_at - execution.started_at) * 1000).round) }`. The `created_at` indexes of 0.3.0 (`[:saga_name, :created_at]`, `[:status, :created_at]`, `[:partition, :created_at]`) are no longer used and can be dropped.
 
 ## Architecture
 
