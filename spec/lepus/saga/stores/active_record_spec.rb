@@ -28,6 +28,7 @@ RSpec.describe Lepus::Saga::Stores::ActiveRecord do
 
   it_behaves_like "a lepus saga store"
   it_behaves_like "a lepus saga engine"
+  it_behaves_like "a lepus saga query store"
 
   it "is selected by name" do
     config = Lepus::Saga::Configuration.new

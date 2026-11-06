@@ -24,6 +24,9 @@ class CreateLepusSagaTables < ActiveRecord::Migration<%= migration_version %>
     add_index :saga_executions, [:status, :last_progress_at],
               name: "index_saga_executions_on_status_and_progress"
     add_index :saga_executions, [:partition, :created_at]
+    add_index :saga_executions, [:saga_name, :created_at]
+    add_index :saga_executions, [:status, :created_at]
+    add_index :saga_executions, :finished_at
 
     create_table :saga_step_attempts, id: :string, limit: 36 do |t|
       t.references :saga_execution, type: :string, limit: 36, null: false, foreign_key: true
@@ -43,5 +46,7 @@ class CreateLepusSagaTables < ActiveRecord::Migration<%= migration_version %>
     end
     add_index :saga_step_attempts, [:saga_execution_id, :step_name, :direction, :epoch, :attempt],
               unique: true, name: "idx_saga_step_attempts_dedup"
+    add_index :saga_step_attempts, :started_at
+    add_index :saga_step_attempts, [:error_class, :started_at]
   end
 end

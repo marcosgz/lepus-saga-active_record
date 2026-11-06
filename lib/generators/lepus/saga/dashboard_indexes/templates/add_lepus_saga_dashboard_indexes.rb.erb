@@ -1,0 +1,17 @@
+class AddLepusSagaDashboardIndexes < ActiveRecord::Migration<%= migration_version %>
+  def up
+    add_index :saga_executions, [:saga_name, :created_at], if_not_exists: true
+    add_index :saga_executions, [:status, :created_at], if_not_exists: true
+    add_index :saga_executions, :finished_at, if_not_exists: true
+    add_index :saga_step_attempts, :started_at, if_not_exists: true
+    add_index :saga_step_attempts, [:error_class, :started_at], if_not_exists: true
+  end
+
+  def down
+    remove_index :saga_step_attempts, [:error_class, :started_at], if_exists: true
+    remove_index :saga_step_attempts, :started_at, if_exists: true
+    remove_index :saga_executions, :finished_at, if_exists: true
+    remove_index :saga_executions, [:status, :created_at], if_exists: true
+    remove_index :saga_executions, [:saga_name, :created_at], if_exists: true
+  end
+end

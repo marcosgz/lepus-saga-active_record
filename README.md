@@ -63,6 +63,14 @@ Lepus::Saga::ActiveRecord::Execution.where.not(id: pinned_ids).prune(finished_be
 | `create_step_attempt` | `create!`; `ActiveRecord::RecordNotUnique` from `idx_saga_step_attempts_dedup` becomes `Lepus::Saga::DuplicateAttemptError` |
 | `stalled_executions(before:)` | `in_progress.where(last_progress_at: ...before).order(:last_progress_at)` |
 | attempt queries | `where(saga_execution_id:, step_name:, direction:, epoch:)` plus `count`/`exists?` |
+| `list_executions` | Filters on the executions table, `order(id: :desc)` with `id < before_id` for keyset paging; the resource search is `LOWER(column) LIKE ? ESCAPE '!'` |
+| `count_executions` | `group(...).count`; grouping by partition also groups by saga name to resolve executions without one |
+| `execution_series` | Plucks `created_at`, and `finished_at` and `status` of terminal executions, newest first and at most `max_rows` + 1; buckets them in Ruby |
+| `step_latency` | Joins attempts to executions and plucks the newest `max_rows` + 1 durations; percentiles in Ruby |
+| `failure_summary` | `GROUP BY error_class, saga_name, step_name` ordered by `COUNT(*)` and `MAX(finished_at)`, then one query per group for its latest failure |
+| `saga_names` | `distinct.order(:saga_name).pluck(:saga_name)` |
+
+The query methods (the optional part of the contract, used by dashboards) stick to SQL every supported database runs the same way: no `date_trunc`, no `percentile_cont`.
 
 On SQLite `FOR UPDATE` is a no-op; Rails 8 opens SQLite transactions as `IMMEDIATE`, which serializes writers on the whole database instead of one row.
 
@@ -76,6 +84,15 @@ The `belongs_to :execution` of a step attempt is optional, because the foreign k
 
 Tables created by hand or before the generator (PostgreSQL `uuid` ids with `gen_random_uuid()` defaults, `jsonb` context, a `lock_version` column) work unchanged: the models set UUIDv7 ids before insert, read `jsonb` through the `json` attribute type and ignore `lock_version`.
 
+Tables created before the install migration indexed the query columns lack the indexes the query methods filter on. Add them with:
+
+```bash
+bin/rails generate lepus:saga:dashboard_indexes
+bin/rails db:migrate
+```
+
+The migration adds `saga_executions (saga_name, created_at)`, `(status, created_at)` and `(finished_at)`, and `saga_step_attempts (started_at)` and `(error_class, started_at)`, skipping any that already exist.
+
 ## Architecture
 
 ```
@@ -86,7 +103,9 @@ ExecutionBehaviour          <───   Lepus::Saga::ActiveRecord::Execution
 StepAttemptBehaviour        <───   Lepus::Saga::ActiveRecord::StepAttempt
 "a lepus saga store"        ───>   spec/lepus/saga/stores/active_record_spec.rb
 "a lepus saga engine"       ───>   (contract and full engine on every database)
+"a lepus saga query store"  ───>
                                    lib/generators/lepus/saga/install
+                                   lib/generators/lepus/saga/dashboard_indexes
 ```
 
 This gem is also the reference for writing another adapter (Sequel, ROM, a key-value store):
@@ -104,6 +123,7 @@ RSpec.describe Lepus::Saga::Stores::Sequel do
 
   it_behaves_like "a lepus saga store"
   it_behaves_like "a lepus saga engine"
+  it_behaves_like "a lepus saga query store" # only if the store implements the optional query methods
 end
 ```
 

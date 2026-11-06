@@ -29,6 +29,16 @@ RSpec.describe "lepus:saga:install generator" do
     expect(source).to include('name: "idx_saga_step_attempts_dedup"')
   end
 
+  it "indexes the columns the store's query methods filter on" do
+    source = generated_migration
+
+    expect(source).to include("add_index :saga_executions, [:saga_name, :created_at]")
+    expect(source).to include("add_index :saga_executions, [:status, :created_at]")
+    expect(source).to include("add_index :saga_executions, :finished_at")
+    expect(source).to include("add_index :saga_step_attempts, :started_at")
+    expect(source).to include("add_index :saga_step_attempts, [:error_class, :started_at]")
+  end
+
   it "stores the failure reason as text" do
     expect(generated_migration).to match(/t\.text\s+:failure_reason/)
   end

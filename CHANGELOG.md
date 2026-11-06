@@ -11,3 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 * Changed: optimistic locking is off, so a legacy `lock_version` column (tables created before the generator) is ignored; `resume_count` is incremented atomically
 * Added: `Execution.prune(finished_before:)` deletes completed executions and their step attempts in batches
 * Changed: the resource index is `(resource_type, resource_id, created_at)`, which serves `executions_for_resource`, and `activerecord >= 8.0` is required
+* Added: the optional query methods of the store contract (`list_executions`, `count_executions`, `execution_series`, `step_latency`, `failure_summary`, `saga_names`) in portable SQL, with time buckets and percentiles computed in Ruby over at most `max_rows` rows; `queries?` is true
+* Added: `lepus:saga:install` indexes `saga_executions (saga_name, created_at)`, `(status, created_at)`, `(finished_at)` and `saga_step_attempts (started_at)`, `(error_class, started_at)`
+* Added: `rails g lepus:saga:dashboard_indexes` adds those indexes to existing tables
+* Added: the `current_step` filter of `list_executions` and `count_executions`
