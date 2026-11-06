@@ -1,4 +1,11 @@
-# Lepus::Saga::ActiveRecord
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lockup-lepus-saga-on-dark.svg">
+    <img alt="Lepus saga" src="docs/brand/lockup-lepus-saga-on-light.svg" width="359">
+  </picture>
+</h1>
+
+<p align="center"><code>lepus-saga-active_record</code></p>
 
 ActiveRecord store for [lepus-saga](https://github.com/marcosgz/lepus-saga). Executions and step attempts live in the `saga_executions` and `saga_step_attempts` tables. Works with PostgreSQL, MySQL/MariaDB and SQLite.
 
