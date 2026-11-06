@@ -16,4 +16,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 * Added: `lepus:saga:install` indexes `saga_executions (saga_name, created_at)`, `(status, created_at)`, `(finished_at)` and `saga_step_attempts (started_at)`, `(error_class, started_at)`
 * Added: `rails g lepus:saga:dashboard_indexes` adds those indexes to existing tables
 * Added: the `current_step` filter of `list_executions` and `count_executions`
-* Added: the `progress_from`/`progress_to` and `error_class`/`error_step` filters of `list_executions` and `count_executions`, and `execution_count` on `failure_summary` rows
+* Added: the `progress_from`/`progress_to` and `error_class`/`error_step`/`error_from`/`error_to` filters of `list_executions` and `count_executions`, and `execution_count` on `failure_summary` rows

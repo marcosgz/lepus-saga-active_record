@@ -177,7 +177,7 @@ module Lepus
         end
 
         def matching_executions(saga_name: nil, status: nil, current_step: nil, partition: nil, resource: nil, from: nil, to: nil,
-          progress_from: nil, progress_to: nil, error_class: nil, error_step: nil)
+          progress_from: nil, progress_to: nil, error_class: nil, error_step: nil, error_from: nil, error_to: nil)
           sagas = filter_values(saga_name)
           statuses = filter_values(status)
           steps = filter_values(current_step)
@@ -189,19 +189,21 @@ module Lepus
           scope = scope.where(created_at: ...to) if to
           scope = scope.where(last_progress_at: progress_from..) if progress_from
           scope = scope.where(last_progress_at: ...progress_to) if progress_to
-          failing = failed_attempts(filter_values(error_class), filter_values(error_step))
+          failing = failed_attempts(filter_values(error_class), filter_values(error_step), error_from, error_to)
           scope = scope.where(id: failing.select(:saga_execution_id)) if failing
           scope = scope.and(in_partition(partition.to_s)) if partition.present?
           scope = scope.and(matching_resource(resource.to_s.downcase)) if resource.present?
           scope
         end
 
-        def failed_attempts(classes, steps)
-          return if classes.nil? && steps.nil?
+        def failed_attempts(classes, steps, from, to)
+          return if [classes, steps, from, to].all?(&:nil?)
 
           scope = step_attempt_class.where(status: "failed")
           scope = scope.where(error_class: classes) if classes
           scope = scope.where(step_name: steps) if steps
+          scope = scope.where(started_at: from..) if from
+          scope = scope.where(started_at: ...to) if to
           scope
         end
 
