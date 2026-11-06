@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.1.0 - Unreleased
+## 0.3.0 - Unreleased
 * Added: brand mark and README logo
 * Added: `Lepus::Saga::Stores::ActiveRecord`, selected with `Lepus::Saga.configure { |c| c.store = :active_record }`
 * Added: `Lepus::Saga::ActiveRecord::Execution` and `StepAttempt` models (UUIDv7 ids, json context, read scopes) on the `saga_executions` and `saga_step_attempts` tables

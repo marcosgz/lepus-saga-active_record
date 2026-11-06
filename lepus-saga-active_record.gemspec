@@ -25,7 +25,7 @@ Gem::Specification.new do |spec|
   end
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "lepus-saga", "~> 0.1.0"
+  spec.add_dependency "lepus-saga", "~> 0.3.0"
   spec.add_dependency "activerecord", ">= 8.0"
   spec.add_development_dependency "activejob"
   spec.add_development_dependency "pry"
