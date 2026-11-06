@@ -30,7 +30,7 @@ module Lepus
         scope :for_resource, ->(type, id) { where(resource_type: type, resource_id: id) }
         scope :in_progress, -> { where(status: IN_PROGRESS_STATUSES) }
         scope :completed, -> { where(status: "completed") }
-        scope :recent_first, -> { order(created_at: :desc) }
+        scope :recent_first, -> { order(started_at: :desc, id: :desc) }
         # Deliberately not `updated_at`: a re-publish, a lock or an attempt
         # opened and abandoned all touch the row while the cursor stands
         # still, so a wedged execution would keep resetting its own stall clock.

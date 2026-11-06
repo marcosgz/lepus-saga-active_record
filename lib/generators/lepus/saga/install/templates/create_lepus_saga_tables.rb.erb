@@ -14,19 +14,22 @@ class CreateLepusSagaTables < ActiveRecord::Migration<%= migration_version %>
       t.string   :partition
       t.datetime :started_at,       null: false
       t.datetime :finished_at
+      t.bigint   :duration_ms
       t.datetime :last_progress_at, null: false
       t.integer  :resume_count,     null: false, default: 0
       t.timestamps
     end
-    add_index :saga_executions, [:resource_type, :resource_id, :created_at],
+    add_index :saga_executions, [:resource_type, :resource_id, :started_at],
               name: "idx_saga_executions_on_resource"
     add_index :saga_executions, [:status, :updated_at]
     add_index :saga_executions, [:status, :last_progress_at],
               name: "index_saga_executions_on_status_and_progress"
-    add_index :saga_executions, [:partition, :created_at]
-    add_index :saga_executions, [:saga_name, :created_at]
-    add_index :saga_executions, [:status, :created_at]
+    add_index :saga_executions, [:started_at, :id]
+    add_index :saga_executions, [:duration_ms, :id]
     add_index :saga_executions, :finished_at
+    add_index :saga_executions, [:partition, :started_at]
+    add_index :saga_executions, [:saga_name, :started_at]
+    add_index :saga_executions, [:status, :started_at]
 
     create_table :saga_step_attempts, id: :string, limit: 36 do |t|
       t.references :saga_execution, type: :string, limit: 36, null: false, foreign_key: true

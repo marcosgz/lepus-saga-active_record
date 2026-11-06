@@ -22,7 +22,7 @@ bin/rails generate lepus:saga:install
 bin/rails db:migrate
 ```
 
-The generator writes one migration that creates both tables. Ids are UUIDv7 strings generated in Ruby, the context columns are `json` and `failure_reason` is `text` (a step's error message can outgrow `VARCHAR(255)`, and MySQL/MariaDB strict mode would reject the write that fails the saga).
+The generator writes one migration that creates both tables and their indexes. Ids are UUIDv7 strings generated in Ruby, the context columns are `json` and `failure_reason` is `text` (a step's error message can outgrow `VARCHAR(255)`, and MySQL/MariaDB strict mode would reject the write that fails the saga). `saga_executions.duration_ms` is a `bigint` the engine writes when an execution ends. Besides the resource, progress and attempt indexes the engine uses, it indexes what the console sorts and filters on: `saga_executions (started_at, id)`, `(duration_ms, id)`, `(finished_at)`, `(saga_name, started_at)`, `(status, started_at)` and `(partition, started_at)`, and `saga_step_attempts (started_at)` and `(error_class, started_at)`.
 
 ```ruby
 # config/initializers/lepus_saga.rb
@@ -68,11 +68,13 @@ Lepus::Saga::ActiveRecord::Execution.where.not(id: pinned_ids).prune(finished_be
 | `with_locked_execution(id)` | `transaction { Execution.lock.find_by(id:) }`, one query |
 | `increment_resume_count` | `update_counters(id, resume_count: 1, touch: true)`, then reads the stored value back |
 | `create_step_attempt` | `create!`; `ActiveRecord::RecordNotUnique` from `idx_saga_step_attempts_dedup` becomes `Lepus::Saga::DuplicateAttemptError` |
-| `stalled_executions(before:)` | `in_progress.where(last_progress_at: ...before).order(:last_progress_at)` |
+| `stalled_executions(before:)` | `in_progress.where(last_progress_at: ...before).order(:last_progress_at, :id)` |
+| `executions_for_resource` | `for_resource(type, id).recent_first`: `ORDER BY started_at DESC, id DESC` on the resource index |
 | attempt queries | `where(saga_execution_id:, step_name:, direction:, epoch:)` plus `count`/`exists?` |
-| `list_executions` | Filters on the executions table, `order(id: :desc)` with `id < before_id` for keyset paging; the resource search is `LOWER(column) LIKE ? ESCAPE '!'`; the error filters are `id IN (SELECT saga_execution_id FROM saga_step_attempts WHERE status = 'failed' ...)` |
+| `list_executions` | Filters on the executions table, ordered by `(started_at, id)`, `(duration_ms, id)` or `(finished_at, id)` in the requested direction. Paging is keyset: rows after `after` compare against its stored value in a subquery (`col < (SELECT col ... WHERE id = ?) OR (col = (SELECT ...) AND id < ?)`). For a nullable sort it runs at most two queries, the rows with a value and then, when the page is not full, the rows without one by id, so both use the `(column, id)` index and nulls come last either way; the resource search is `LOWER(column) LIKE ? ESCAPE '!'`; the error filters are `id IN (SELECT saga_execution_id FROM saga_step_attempts WHERE status = 'failed' ...)` |
 | `count_executions` | `group(...).count`; grouping by partition also groups by saga name to resolve executions without one |
-| `execution_series` | Plucks `created_at`, and `finished_at` and `status` of terminal executions, newest first and at most `max_rows` + 1; buckets them in Ruby |
+| `finished_executions` | Base's: `count_executions` grouped by saga and status over `finished_from`/`finished_to`, then one `list_executions(sort: :finished_at)` per saga, on the `finished_at` index |
+| `execution_series` | Plucks `started_at`, and `finished_at` and `status` of terminal executions, newest first and at most `max_rows` + 1; buckets them in Ruby |
 | `step_latency` | Joins attempts to executions and plucks the newest `max_rows` + 1 durations; percentiles in Ruby |
 | `failure_summary` | `GROUP BY error_class, saga_name, step_name` with `COUNT(*)` and `COUNT(DISTINCT saga_execution_id)`, ordered by `COUNT(*)` and `MAX(finished_at)`, then one query per group for its latest failure |
 | `saga_names` | `distinct.order(:saga_name).pluck(:saga_name)` |
@@ -89,16 +91,23 @@ The `belongs_to :execution` of a step attempt is optional, because the foreign k
 
 ## Existing tables
 
-Tables created by hand or before the generator (PostgreSQL `uuid` ids with `gen_random_uuid()` defaults, `jsonb` context, a `lock_version` column) work unchanged: the models set UUIDv7 ids before insert, read `jsonb` through the `json` attribute type and ignore `lock_version`.
+Tables created by hand or before the generator (PostgreSQL `uuid` ids with `gen_random_uuid()` defaults, `jsonb` context, a `lock_version` column) work unchanged: the models set UUIDv7 ids before insert, read `jsonb` through the `json` attribute type and ignore `lock_version`. Rows written with ids that are not time-ordered (e.g. random UUIDv4) list in time order, since the store sorts by started_at (or duration) and only breaks ties by id.
 
-Tables created before the install migration indexed the query columns lack the indexes the query methods filter on. Add them with:
+Such tables lack the `duration_ms` column and the indexes the install migration creates. Add them in a migration of your own:
 
-```bash
-bin/rails generate lepus:saga:dashboard_indexes
-bin/rails db:migrate
+```ruby
+add_column :saga_executions, :duration_ms, :bigint
+add_index :saga_executions, [:started_at, :id]
+add_index :saga_executions, [:duration_ms, :id]
+add_index :saga_executions, :finished_at
+add_index :saga_executions, [:saga_name, :started_at]
+add_index :saga_executions, [:status, :started_at]
+add_index :saga_executions, [:partition, :started_at]
+add_index :saga_step_attempts, :started_at
+add_index :saga_step_attempts, [:error_class, :started_at]
 ```
 
-The migration adds `saga_executions (saga_name, created_at)`, `(status, created_at)` and `(finished_at)`, and `saga_step_attempts (started_at)` and `(error_class, started_at)`, skipping any that already exist.
+and backfill the duration of finished executions, for example with `Lepus::Saga::ActiveRecord::Execution.where.not(finished_at: nil).find_each { |execution| execution.update_columns(duration_ms: ((execution.finished_at - execution.started_at) * 1000).round) }`.
 
 ## Architecture
 
@@ -112,7 +121,6 @@ StepAttemptBehaviour        <───   Lepus::Saga::ActiveRecord::StepAttempt
 "a lepus saga engine"       ───>   (contract and full engine on every database)
 "a lepus saga query store"  ───>
                                    lib/generators/lepus/saga/install
-                                   lib/generators/lepus/saga/dashboard_indexes
 ```
 
 This gem is also the reference for writing another adapter (Sequel, ROM, a key-value store):
