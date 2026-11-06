@@ -1,0 +1,47 @@
+class CreateLepusSagaTables < ActiveRecord::Migration<%= migration_version %>
+  def change
+    create_table :saga_executions, id: :string, limit: 36 do |t|
+      t.string   :saga_name,        null: false
+      t.string   :resource_type,    null: false
+      t.string   :resource_id,      null: false
+      t.string   :status,           null: false, default: "running"
+      t.string   :current_step
+      t.string   :direction,        null: false, default: "execute"
+      t.integer  :epoch,            null: false, default: 0
+      t.json     :context,          null: false
+      t.string   :correlation_id
+      t.text     :failure_reason
+      t.string   :partition
+      t.datetime :started_at,       null: false
+      t.datetime :finished_at
+      t.datetime :last_progress_at, null: false
+      t.integer  :resume_count,     null: false, default: 0
+      t.timestamps
+    end
+    add_index :saga_executions, [:resource_type, :resource_id, :created_at],
+              name: "idx_saga_executions_on_resource"
+    add_index :saga_executions, [:status, :updated_at]
+    add_index :saga_executions, [:status, :last_progress_at],
+              name: "index_saga_executions_on_status_and_progress"
+    add_index :saga_executions, [:partition, :created_at]
+
+    create_table :saga_step_attempts, id: :string, limit: 36 do |t|
+      t.references :saga_execution, type: :string, limit: 36, null: false, foreign_key: true
+      t.string   :step_name,       null: false
+      t.string   :direction,       null: false, default: "execute"
+      t.integer  :epoch,           null: false, default: 0
+      t.integer  :attempt,         null: false
+      t.string   :status,          null: false, default: "running"
+      t.string   :error_class
+      t.text     :error_message
+      t.text     :error_backtrace
+      t.json     :context_after,   null: false
+      t.datetime :started_at,      null: false
+      t.datetime :finished_at
+      t.float    :duration_ms
+      t.timestamps
+    end
+    add_index :saga_step_attempts, [:saga_execution_id, :step_name, :direction, :epoch, :attempt],
+              unique: true, name: "idx_saga_step_attempts_dedup"
+  end
+end

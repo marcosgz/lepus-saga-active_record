@@ -1,0 +1,13 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## 0.1.0 - Unreleased
+* Added: `Lepus::Saga::Stores::ActiveRecord`, selected with `Lepus::Saga.configure { |c| c.store = :active_record }`
+* Added: `Lepus::Saga::ActiveRecord::Execution` and `StepAttempt` models (UUIDv7 ids, json context, read scopes) on the `saga_executions` and `saga_step_attempts` tables
+* Added: `rails g lepus:saga:install` (moved from lepus-saga): `failure_reason` is `text` and there is no `lock_version` column
+* Changed: optimistic locking is off, so a legacy `lock_version` column (tables created before the generator) is ignored; `resume_count` is incremented atomically
+* Added: `Execution.prune(finished_before:)` deletes completed executions and their step attempts in batches
+* Changed: the resource index is `(resource_type, resource_id, created_at)`, which serves `executions_for_resource`, and `activerecord >= 8.0` is required
