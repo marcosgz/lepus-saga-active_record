@@ -70,11 +70,11 @@ Lepus::Saga::ActiveRecord::Execution.where.not(id: pinned_ids).prune(finished_be
 | `create_step_attempt` | `create!`; `ActiveRecord::RecordNotUnique` from `idx_saga_step_attempts_dedup` becomes `Lepus::Saga::DuplicateAttemptError` |
 | `stalled_executions(before:)` | `in_progress.where(last_progress_at: ...before).order(:last_progress_at)` |
 | attempt queries | `where(saga_execution_id:, step_name:, direction:, epoch:)` plus `count`/`exists?` |
-| `list_executions` | Filters on the executions table, `order(id: :desc)` with `id < before_id` for keyset paging; the resource search is `LOWER(column) LIKE ? ESCAPE '!'` |
+| `list_executions` | Filters on the executions table, `order(id: :desc)` with `id < before_id` for keyset paging; the resource search is `LOWER(column) LIKE ? ESCAPE '!'`; the error filters are `id IN (SELECT saga_execution_id FROM saga_step_attempts WHERE status = 'failed' ...)` |
 | `count_executions` | `group(...).count`; grouping by partition also groups by saga name to resolve executions without one |
 | `execution_series` | Plucks `created_at`, and `finished_at` and `status` of terminal executions, newest first and at most `max_rows` + 1; buckets them in Ruby |
 | `step_latency` | Joins attempts to executions and plucks the newest `max_rows` + 1 durations; percentiles in Ruby |
-| `failure_summary` | `GROUP BY error_class, saga_name, step_name` ordered by `COUNT(*)` and `MAX(finished_at)`, then one query per group for its latest failure |
+| `failure_summary` | `GROUP BY error_class, saga_name, step_name` with `COUNT(*)` and `COUNT(DISTINCT saga_execution_id)`, ordered by `COUNT(*)` and `MAX(finished_at)`, then one query per group for its latest failure |
 | `saga_names` | `distinct.order(:saga_name).pluck(:saga_name)` |
 
 The query methods (the optional part of the contract, used by dashboards) stick to SQL every supported database runs the same way: no `date_trunc`, no `percentile_cont`.

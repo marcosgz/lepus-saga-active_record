@@ -153,15 +153,15 @@ module Lepus
             .group(attempts[:error_class], saga, attempts[:step_name])
             .order(Arel::Nodes::Descending.new(Arel.star.count), Arel::Nodes::Descending.new(attempts[:finished_at].maximum))
             .limit(limit)
-            .pluck(attempts[:error_class], saga, attempts[:step_name], Arel.star.count)
-            .map do |error_class, group_saga, step_name, count|
+            .pluck(attempts[:error_class], saga, attempts[:step_name], Arel.star.count, attempts[:saga_execution_id].count(true))
+            .map do |error_class, group_saga, step_name, count, execution_count|
               message, last_seen_at, execution_id = failed
                 .where(error_class: error_class, step_name: step_name).where(saga.eq(group_saga))
                 .order(attempts[:finished_at].desc, attempts[:id].desc)
                 .pick(attempts[:error_message], attempts[:finished_at], attempts[:saga_execution_id])
               {
                 error_class: error_class, saga_name: group_saga, step_name: step_name, count: count,
-                last_seen_at: last_seen_at, sample_message: message, sample_execution_id: execution_id
+                execution_count: execution_count, last_seen_at: last_seen_at, sample_message: message, sample_execution_id: execution_id
               }
             end
         end
@@ -176,7 +176,8 @@ module Lepus
           step_attempt_class.where(saga_execution_id: execution.id)
         end
 
-        def matching_executions(saga_name: nil, status: nil, current_step: nil, partition: nil, resource: nil, from: nil, to: nil)
+        def matching_executions(saga_name: nil, status: nil, current_step: nil, partition: nil, resource: nil, from: nil, to: nil,
+          progress_from: nil, progress_to: nil, error_class: nil, error_step: nil)
           sagas = filter_values(saga_name)
           statuses = filter_values(status)
           steps = filter_values(current_step)
@@ -186,8 +187,21 @@ module Lepus
           scope = scope.where(current_step: steps) if steps
           scope = scope.where(created_at: from..) if from
           scope = scope.where(created_at: ...to) if to
+          scope = scope.where(last_progress_at: progress_from..) if progress_from
+          scope = scope.where(last_progress_at: ...progress_to) if progress_to
+          failing = failed_attempts(filter_values(error_class), filter_values(error_step))
+          scope = scope.where(id: failing.select(:saga_execution_id)) if failing
           scope = scope.and(in_partition(partition.to_s)) if partition.present?
           scope = scope.and(matching_resource(resource.to_s.downcase)) if resource.present?
+          scope
+        end
+
+        def failed_attempts(classes, steps)
+          return if classes.nil? && steps.nil?
+
+          scope = step_attempt_class.where(status: "failed")
+          scope = scope.where(error_class: classes) if classes
+          scope = scope.where(step_name: steps) if steps
           scope
         end
 
