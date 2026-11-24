@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary = "ActiveRecord store for Lepus::Saga"
   spec.description = "Keeps lepus-saga executions and step attempts in ActiveRecord tables (PostgreSQL, MySQL/MariaDB, SQLite), with a Rails generator for the migration"
   spec.homepage = "https://github.com/marcosgz/lepus-saga-active_record"
-  spec.license = "MIT"
+  spec.license = "GPL-3.0-or-later"
   spec.required_ruby_version = ">= 3.3.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
